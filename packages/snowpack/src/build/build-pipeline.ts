@@ -139,6 +139,24 @@ export function runPipelineProxyStep(
   return null;
 }
 
+export async function runPipelineOptimizeStep(
+  buildDirectory: string,
+  {buildPipeline, messageBus}: BuildFileOptions,
+) {
+  for (const step of buildPipeline) {
+    if (!step.optimize) {
+      continue;
+    }
+    await step.optimize({
+      buildDirectory,
+      log: (msg) => {
+        messageBus.emit('WORKER_MSG', {id: step.name, level: 'log', msg});
+      },
+    });
+  }
+  return null;
+}
+
 /** Core Snowpack file pipeline builder */
 export async function buildFile(
   srcPath: string,

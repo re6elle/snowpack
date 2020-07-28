@@ -1,5 +1,1 @@
-{
-  "extends": "@snowpack/app-scripts-svelte",
-  "scripts": {},
-  "plugins": []
-}
+{"extends":"@snowpack/app-scripts-svelte","scripts":{},"plugins":[],"buildOptions":{"minify":false}}

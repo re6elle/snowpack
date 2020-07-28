@@ -73,10 +73,8 @@ export type __OldBuildResult = {result: string; resources?: {css?: string}};
 /** map of extensions -> code (e.g. { ".js": "[code]", ".css": "[code]" }) */
 export type LoadResult = string | {[fileExtension: string]: string};
 
-export interface BundleOptions {
-  srcDirectory: string;
-  destDirectory: string;
-  jsFilePaths: Set<string>;
+export interface OptimizeOptions {
+  buildDirectory: string;
   log: (msg, level?: 'INFO' | 'WARN' | 'ERROR') => void;
 }
 
@@ -98,7 +96,7 @@ export interface SnowpackPlugin {
   /** runs a command, unrelated to file building (e.g. TypeScript, ESLint) */
   run?(options: RunOptions): Promise<unknown>;
   /** bundle the entire built application */
-  bundle?(options: BundleOptions): Promise<void>;
+  optimize?(options: OptimizeOptions): Promise<void>;
   /** Known dependencies that should be installed */
   knownEntrypoints?: string[];
 }
@@ -128,7 +126,6 @@ export interface SnowpackConfig {
     out: string;
     fallback: string;
     open: string;
-    bundle: boolean | undefined;
     hmr: boolean;
   };
   installOptions: {
@@ -151,9 +148,7 @@ export interface SnowpackConfig {
     metaDir: string;
     minify: boolean;
   };
-  // experimental API; to convert to supported config values in the future
   _extensionMap: Record<string, string>;
-  _bundler: SnowpackPlugin | undefined;
 }
 
 export interface CLIFlags extends Omit<Partial<SnowpackConfig['installOptions']>, 'env'> {
@@ -191,7 +186,6 @@ const DEFAULT_CONFIG: Partial<SnowpackConfig> = {
     out: 'build',
     fallback: 'index.html',
     hmr: true,
-    bundle: undefined,
   },
   buildOptions: {
     baseUrl: '/',
@@ -311,6 +305,10 @@ function expandCliFlags(flags: CLIFlags): DeepPartial<SnowpackConfig> {
       result.devOptions[flag] = val;
       continue;
     }
+    if (configSchema.properties.buildOptions.properties[flag]) {
+      result.devOptions[flag] = val;
+      continue;
+    }
     console.error(`Unknown CLI flag: "${flag}"`);
     process.exit(1);
   }
@@ -353,11 +351,9 @@ function loadPlugins(
   config: SnowpackConfig,
 ): {
   plugins: SnowpackPlugin[];
-  bundler: SnowpackPlugin | undefined;
   extensionMap: Record<string, string>;
 } {
   const plugins: SnowpackPlugin[] = [];
-  let bundler: SnowpackPlugin | undefined;
 
   function loadPluginFromScript(specifier: string): SnowpackPlugin | undefined {
     try {
@@ -375,10 +371,17 @@ function loadPlugins(
     // Legacy support: Map the new load() interface to the old build() interface
     if (plugin.build) {
       plugin.load = async (options: LoadOptions) => {
-        const result = await plugin.build({
-          ...options,
-          contents: fs.readFileSync(options.filePath, 'utf-8'),
-        });
+        const result = await plugin
+          .build({
+            ...options,
+            contents: fs.readFileSync(options.filePath, 'utf-8'),
+          })
+          .catch((err) => {
+            console.error(
+              `[${plugin.name}] ERROR: There was a problem running this older plugin. Please update the plugin to the latest version.`,
+            );
+            throw err;
+          });
         if (!result) {
           return null;
         }
@@ -386,6 +389,26 @@ function loadPlugins(
           return {'.js': result.result, '.css': result.resources.css};
         }
         return result.result;
+      };
+    }
+    // Legacy support: Map the new optimize() interface to the old bundle() interface
+    if (plugin.bundle) {
+      plugin.optimize = async (options: OptimizeOptions) => {
+        return plugin
+          .bundle({
+            srcDirectory: options.buildDirectory,
+            destDirectory: options.buildDirectory,
+            log: options.log,
+            // It turns out, this was more or less broken (included all files, not just JS).
+            // Confirmed no plugins are using this now, so safe to use an empty array.
+            jsFilePaths: [],
+          })
+          .catch((err) => {
+            console.error(
+              `[${plugin.name}] ERROR: There was a problem running this older plugin. Please update the plugin to the latest version.`,
+            );
+            throw err;
+          });
       };
     }
     if (plugin.defaultBuildScript && !plugin.resolve) {
@@ -424,16 +447,7 @@ function loadPlugins(
       }
 
       case 'bundle': {
-        const bundlerName = cmd;
-        bundler = loadPluginFromScript(bundlerName);
-        if (!bundler) {
-          handleConfigError(
-            `Failed to load plugin "${bundlerName}". Only installed Snowpack Plugins are supported for bundle:*`,
-          );
-          return;
-        }
-        // TODO: remove with new bundler API
-        if (!bundler.name) bundler.name = bundlerName;
+        plugins.push(loadPluginFromScript(cmd)!);
         break;
       }
     }
@@ -444,9 +458,6 @@ function loadPlugins(
     const pluginName = Array.isArray(ref) ? ref[0] : ref;
     const pluginOptions = Array.isArray(ref) ? ref[1] : {};
     const plugin = loadPluginFromConfig(pluginName, pluginOptions);
-    if (plugin.bundle) {
-      bundler = plugin;
-    }
     plugins.push(plugin);
   });
 
@@ -470,7 +481,6 @@ function loadPlugins(
 
   return {
     plugins,
-    bundler,
     extensionMap,
   };
 }
@@ -618,10 +628,6 @@ function normalizeConfig(config: SnowpackConfig): SnowpackConfig {
     removeTrailingSlash(config.buildOptions.metaDir),
   );
 
-  if (config.devOptions.bundle === true && !config.scripts['bundle:*']) {
-    handleConfigError(`--bundle set to true, but no "bundle:*" script/plugin was provided.`);
-  }
-
   const isLegacyMountConfig = !config.mount;
   config = handleLegacyProxyScripts(config);
   config.proxy = normalizeProxies(config.proxy as any);
@@ -629,9 +635,8 @@ function normalizeConfig(config: SnowpackConfig): SnowpackConfig {
   config.alias = normalizeAlias(config, isLegacyMountConfig);
 
   // new pipeline
-  const {plugins, bundler, extensionMap} = loadPlugins(config);
+  const {plugins, extensionMap} = loadPlugins(config);
   config.plugins = plugins;
-  config._bundler = bundler;
   config._extensionMap = extensionMap;
 
   // If any plugins defined knownEntrypoints, add them here
@@ -768,9 +773,9 @@ function validateConfigAgainstV1(rawConfig: any, cliFlags: any) {
       '[Snowpack v1 -> v2] `installOptions.babel` has been replaced by `snowpack build`.',
     );
   }
-  if (rawConfig.installOptions?.optimize || cliFlags.optimize) {
+  if (rawConfig.installOptions?.optimize) {
     handleDeprecatedConfigError(
-      '[Snowpack v1 -> v2] `installOptions.optimize` has been replaced by `snowpack build`.',
+      '[Snowpack v1 -> v2] `installOptions.optimize` has been replaced by `snowpack build` minification.',
     );
   }
   if (rawConfig.installOptions?.strict || cliFlags.strict) {

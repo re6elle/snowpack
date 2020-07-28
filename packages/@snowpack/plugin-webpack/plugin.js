@@ -33,9 +33,17 @@ module.exports = function plugin(config, args) {
     throw new Error("Output Pattern for CSS must end in .css");
   }
 
+  // Webpack handles minification, so its safe to disable 
+  // Snowpack's default minifier.
+  config.buildOptions.minify = false;
+  // Webpack needs the build directory to be cleaned so that 
+  // it doesn't bundle old builds.
+  config.buildOptions.clean = true;
+
   return {
     defaultBuildScript: "bundle:*",
-    async bundle({ srcDirectory, destDirectory, log, jsFilePaths }) {
+    async bundle({ srcDirectory, destDirectory, log }) {
+
       // config.homepage is legacy, remove in future version
       const buildOptions = config.buildOptions || {};
       let baseUrl = buildOptions.baseUrl || config.homepage || "/";
@@ -127,7 +135,11 @@ module.exports = function plugin(config, args) {
                 {
                   // TODO: replace with "@open-wc/webpack-import-meta-loader"
                   // https://github.com/open-wc/open-wc/pull/1677
-                  loader: require.resolve("./import-meta-plugin/plugin.js"),
+                  loader: require.resolve("./plugins/import-meta-fix.js"),
+                },
+                {
+                  loader: require.resolve("./plugins/proxy-import-resolve.js"),
+                  options: {preserveImportProxies: args.preserveImportProxies || []},
                 },
               ],
             },

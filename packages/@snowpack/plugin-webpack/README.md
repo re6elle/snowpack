@@ -29,6 +29,7 @@ Currently only works for Single Page Applications (SPA) with a single HTML entry
 
 - `sourceMap: boolean` - Enable sourcemaps in the bundled output.
 - `outputPattern: {css: string, js: string, assets: string}` - Set the URL for your final bundled files. This is where they will be written to disk in the `build/` directory. See Webpack's [`output.filename`](https://webpack.js.org/configuration/output/#outputfilename) documentation for examples of valid values.
+- `preserveImportProxies: true | false | string[]` - Preserve import proxies in your bundled application. By default, all proxied imports (ex: `import './style.css.proxy.js'`) are converted back to normal resource imports (ex: `import ./style.css`) for Webpack. If your build uses a special type of import proxy that Webpack can't handle by default, add it here and Webpack will preserve it (ex: `preserveImportProxies: ['svg']`).
 - `extendConfig: (config: WebpackConfig) => WebpackConfig` - extend your webpack config, see below.
 
 #### Extending The Default Webpack Config
