@@ -1,0 +1,24 @@
+{
+  "version": "1.0.0",
+  "name": "@snowpack/plugin-run-script",
+  "main": "plugin.js",
+  "types": "plugin.d.ts",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc -d"
+  },
+  "dependencies": {
+    "execa": "^4.0.3",
+    "npm-run-path": "^4.0.1"
+  },
+  "devDependencies": {
+    "snowpack": "*",
+    "typescript": "^3.9.7"
+  },
+  "peerDependencies": {
+    "snowpack": "*"
+  }
+}

@@ -1,21 +1,33 @@
 import execa from 'execa';
 import npmRunPath from 'npm-run-path';
 import {promises as fs} from 'fs';
-import {SnowpackPlugin, SnowpackConfig} from '../config';
 const cwd = process.cwd();
 
-export function buildScriptPlugin(
-  _: SnowpackConfig,
-  {
-    input,
-    output,
-    cmd,
-  }: {
+// TODO: import this from snowpack
+interface SnowpackConfig {
+  name: string;
+  resolve: {
     input: string[];
     output: string[];
-    cmd: string;
-  },
-): SnowpackPlugin {
+  };
+  load(options: {
+    filePath: string;
+    log: (msg: string, data: any) => void;
+  }): Promise<Record<string, string> | string | null | undefined>;
+}
+
+type SnowpackPluginFactory<PluginOptions> = (config: any, options: PluginOptions) => SnowpackConfig;
+
+export interface BuildScriptPluginOptions {
+  input: string[];
+  output: string[];
+  cmd: string;
+}
+
+const buildScriptPlugin: SnowpackPluginFactory<BuildScriptPluginOptions> = (
+  _,
+  {input, output, cmd},
+) => {
   if (output.length !== 1) {
     throw new Error('Requires one output.');
   }
@@ -47,4 +59,6 @@ export function buildScriptPlugin(
       }
     },
   };
-}
+};
+
+export default buildScriptPlugin;

@@ -1,20 +1,25 @@
 import execa from 'execa';
 import npmRunPath from 'npm-run-path';
-import {SnowpackPlugin, SnowpackConfig} from '../config';
 const cwd = process.cwd();
 
-export function runScriptPlugin(
-  _config: SnowpackConfig,
-  {
-    cmd,
-    watch: _watchCmd,
-  }: {
-    cmd: string;
-    watch?: string;
-  },
-): SnowpackPlugin {
+export interface RunScriptPluginOptions {
+  cmd: string;
+  watch?: string;
+}
+
+interface SnowpackConfig {
+  name: string;
+  run(options: {
+    isDev: boolean;
+    log: (msg: string, data: any) => void;
+  }): Promise<execa.ExecaReturnValue>;
+}
+
+type SnowpackPluginFactory<PluginOptions> = (config: any, options: PluginOptions) => SnowpackConfig;
+
+const runScriptPlugin: SnowpackPluginFactory<RunScriptPluginOptions> = (_, {cmd, watch}) => {
   const cmdProgram = cmd.split(' ')[0];
-  const watchCmd = _watchCmd && _watchCmd.replace('$1', cmd);
+  const watchCmd = watch && watch.replace('$1', cmd);
 
   return {
     name: `run:${cmdProgram}`,
@@ -54,4 +59,6 @@ export function runScriptPlugin(
       return workerPromise;
     },
   };
-}
+};
+
+export default runScriptPlugin;
